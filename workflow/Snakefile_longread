@@ -1,0 +1,134 @@
+## =============================================================================
+## Long-read RNA-seq Benchmark — Snakefile
+## Compare Tosa / regtools / featureCounts on minimap2-aligned long-read BAMs
+## (Oxford Nanopore, GSE246705)
+## =============================================================================
+
+import os
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+configfile: os.path.join(workflow.basedir, "..", "config", "config_longread.yaml")
+
+OUTDIR = config.get("outdir", "results")
+workdir: OUTDIR
+
+# ---------------------------------------------------------------------------
+# Read experiment table
+# ---------------------------------------------------------------------------
+
+EXPERIMENT_TABLE = pd.read_csv(config["experiment_table"], sep="\t")
+SAMPLES = EXPERIMENT_TABLE["sample"].tolist()
+BAM_DICT = dict(zip(EXPERIMENT_TABLE["sample"], EXPERIMENT_TABLE["bam"]))
+
+# ---------------------------------------------------------------------------
+# Singularity bind paths
+# ---------------------------------------------------------------------------
+
+def _collect_bind_paths():
+    """Gather all directories that Singularity containers need to access."""
+    paths = set()
+    if os.path.isabs(OUTDIR):
+        paths.add(OUTDIR)
+    gtf = config.get("gtf", "")
+    if gtf and os.path.isabs(gtf):
+        paths.add(os.path.dirname(gtf))
+    fasta = config.get("fasta", "")
+    if fasta and os.path.isabs(fasta):
+        paths.add(os.path.dirname(fasta))
+    for bam in BAM_DICT.values():
+        if bam and os.path.isabs(bam):
+            paths.add(os.path.dirname(bam))
+    for p in config.get("singularity_bind_paths", []):
+        if p:
+            paths.add(p)
+    return sorted(paths)
+
+_BIND_PATHS = _collect_bind_paths()
+SINGULARITY_ARGS = " ".join(f"--bind {p}" for p in _BIND_PATHS) if _BIND_PATHS else ""
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def get_bam(wildcards):
+    """Return BAM path for a given sample."""
+    return BAM_DICT[wildcards.sample]
+
+def get_bai(wildcards):
+    """Return BAI path for a given sample (assumes .bam.bai exists)."""
+    return BAM_DICT[wildcards.sample] + ".bai"
+
+def get_strandedness_tosa():
+    """Return strand flag for Tosa."""
+    s = config.get("strandedness")
+    if s:
+        return f"--strand {s}"
+    return ""
+
+def get_strandedness_featurecounts():
+    """Return strand code for featureCounts (-s)."""
+    s = config.get("strandedness")
+    if s is None:
+        return 0
+    mapping = {"RF": 2, "FR": 1, "XS": 0}
+    return mapping.get(s, 0)
+
+TOSA_STRAND = get_strandedness_tosa()
+FC_STRAND = get_strandedness_featurecounts()
+
+# ---------------------------------------------------------------------------
+# Define tool-thread conditions
+# ---------------------------------------------------------------------------
+
+TOOLS = ["tosa_1t", "tosa_8t", "regtools_1t", "featurecounts_1t", "featurecounts_8t"]
+
+# ---------------------------------------------------------------------------
+# Include rules
+# ---------------------------------------------------------------------------
+
+include: "rules/longread_benchmark.smk"
+include: "rules/longread_junction_comparison.smk"
+
+# ---------------------------------------------------------------------------
+# Target rule
+# ---------------------------------------------------------------------------
+
+# Pick first sample for scatter plot
+SCATTER_SAMPLE = SAMPLES[0]
+
+rule all:
+    input:
+        # All benchmark TSV files
+        expand("benchmarks/{sample}/{tool}.tsv", sample=SAMPLES, tool=TOOLS),
+        # All read count files
+        expand("read_counts/{sample}.txt", sample=SAMPLES),
+        # Aggregated performance results
+        "longread_results/per_sample_benchmark.tsv",
+        "longread_results/summary_total_time.tsv",
+        "longread_results/barplot_total_time.png",
+        "longread_results/boxplot_time_per_sample.png",
+        "longread_results/scatter_reads_vs_time.png",
+        "longread_results/scatter_reads_vs_memory.png",
+        "longread_results/boxplot_memory.png",
+        "longread_results/speedup_comparison.png",
+        # Junction comparison results
+        "longread_results/junction_comparison/per_sample_jaccard.tsv",
+        "longread_results/junction_comparison/jaccard_set_heatmap.png",
+        "longread_results/junction_comparison/jaccard_count_heatmap.png",
+        "longread_results/junction_comparison/jaccard_boxplot.png",
+        "longread_results/junction_comparison/upset_plot.png",
+        "longread_results/junction_comparison/junction_summary.tsv",
+        # Tosa vs regtools scatter (first sample)
+        f"longread_results/junction_comparison/{SCATTER_SAMPLE}_tosa_vs_regtools_scatter.png",
+        # featureCounts investigation
+        "longread_results/fc_investigation/diagnostic_report.txt",
+        "longread_results/fc_investigation/junction_counts.png",
+        "longread_results/fc_investigation/offset_analysis.png",
+        "longread_results/fc_investigation/annotation_status.png",
+        "longread_results/fc_investigation/intron_size.png",
+        "longread_results/fc_investigation/overlap_categories.png",
+

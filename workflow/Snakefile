@@ -1,0 +1,305 @@
+## =============================================================================
+## Tosa Benchmark — main Snakefile
+## =============================================================================
+
+import os
+
+# Resolve config path relative to the Snakefile location so the pipeline
+# can be launched from any working directory.
+configfile: os.path.join(workflow.basedir, "..", "config", "config.yaml")
+
+# ---------------------------------------------------------------------------
+# Helper variables
+# ---------------------------------------------------------------------------
+
+OUTDIR = config.get("outdir", "results")
+
+# Set working directory to output directory so .snakemake/ (including
+# Singularity images) is stored inside it.
+workdir: OUTDIR
+
+SAMPLES = [
+    s for s in config["samples"].keys()
+    if config["samples"][s] is not None and "R1" in config["samples"][s]
+]
+ALL_SAMPLES = SAMPLES + ["simulation"]
+
+# ---------------------------------------------------------------------------
+# Singularity bind paths — collect from config and build --bind argument
+# ---------------------------------------------------------------------------
+
+def _collect_bind_paths():
+    """Gather all directories that Singularity containers need to access."""
+    paths = set()
+    # Output directory
+    if os.path.isabs(OUTDIR):
+        paths.add(OUTDIR)
+    # STAR index
+    si = config.get("star_index", "")
+    if si and os.path.isabs(si):
+        paths.add(si)
+    # GTF annotation
+    gtf = config.get("gtf", "")
+    if gtf and os.path.isabs(gtf):
+        paths.add(os.path.dirname(gtf))
+    # FASTQ directories
+    for s, info in config.get("samples", {}).items():
+        if info is None:
+            continue
+        for key in ("R1", "R2"):
+            fq = info.get(key, "")
+            if fq and os.path.isabs(fq):
+                paths.add(os.path.dirname(fq))
+    # Explicit extra bind paths from config
+    for p in config.get("singularity_bind_paths", []):
+        if p:
+            paths.add(p)
+    return sorted(paths)
+
+_BIND_PATHS = _collect_bind_paths()
+SINGULARITY_ARGS = " ".join(f"--bind {p}" for p in _BIND_PATHS) if _BIND_PATHS else ""
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def is_paired(sample):
+    """Return True if sample has R2 FASTQ."""
+    if sample == "simulation":
+        return True
+    sample_cfg = config["samples"].get(sample)
+    if sample_cfg is None:
+        return False
+    return "R2" in sample_cfg
+
+
+def get_star_index(sample):
+    """Return STAR index directory for the given sample."""
+    if sample == "simulation":
+        return "simulation/star_index"
+    return config["star_index"]
+
+
+def get_strandedness_tosa(wildcards):
+    """Return strand flag for Tosa."""
+    s = config.get("strandedness")
+    if s:
+        return f"--strand {s}"
+    return ""
+
+
+def get_strandedness_regtools(wildcards):
+    """Return strand flag for regtools."""
+    s = config.get("strandedness")
+    if s:
+        return s
+    # Default: use XS tags when available (STAR adds them)
+    return "XS"
+
+
+def get_strandedness_featurecounts(wildcards):
+    """Return strand code for featureCounts (-s).
+
+    featureCounts strand codes: 0=unstranded, 1=stranded (FR), 2=reversely stranded (RF).
+    """
+    s = config.get("strandedness")
+    if s is None:
+        return 0
+    mapping = {"RF": 2, "FR": 1, "XS": 0}
+    return mapping.get(s, 0)
+
+
+def get_gtf(sample):
+    """Return GTF annotation path for the given sample."""
+    if sample == "simulation":
+        return "simulation/reference/annotation.gtf"
+    return config["gtf"]
+
+
+# ---------------------------------------------------------------------------
+# Include rule modules
+# ---------------------------------------------------------------------------
+
+include: "rules/simulate.smk"
+include: "rules/star.smk"
+include: "rules/tosa.smk"
+include: "rules/regtools.smk"
+include: "rules/featurecounts.smk"
+include: "rules/comparison.smk"
+include: "rules/eib_simulate.smk"
+include: "rules/eib_star.smk"
+include: "rules/eib_tosa.smk"
+include: "rules/eib_evaluate.smk"
+
+# scRNA-seq benchmark modules
+include: "rules/scrna_simulate.smk"
+include: "rules/starsolo.smk"
+include: "rules/scrna_tosa.smk"
+include: "rules/scrna_regtools.smk"
+include: "rules/scrna_comparison.smk"
+include: "rules/scrna_downsample.smk"
+include: "rules/scrna_eib_simulate.smk"
+include: "rules/scrna_eib_tosa.smk"
+include: "rules/scrna_eib_evaluate.smk"
+
+# ---------------------------------------------------------------------------
+# Paper figure directory (project root)
+# ---------------------------------------------------------------------------
+
+PAPER_DIR = os.path.abspath(os.path.join(workflow.basedir, "..", "figures"))
+
+# ---------------------------------------------------------------------------
+# Target rule
+# ---------------------------------------------------------------------------
+
+rule all:
+    input:
+        # Per-sample comparison outputs (real data)
+        expand(
+            [
+                "comparison/{sample}_junction_counts.tsv",
+                "comparison/{sample}_scatter.png",
+                "comparison/{sample}_venn.png",
+                "comparison/{sample}_correlation.tsv",
+                "comparison/{sample}_jaccard.png",
+                "comparison/{sample}_benchmark.png",
+                "comparison/{sample}_benchmark_mt.png",
+                "comparison/{sample}_discrepancy_table.tsv",
+                "comparison/{sample}_discrepancy_summary.png",
+            ],
+            sample=SAMPLES,
+        ),
+        # Simulation comparison outputs
+        expand(
+            [
+                "comparison/simulation_junction_counts.tsv",
+                "comparison/simulation_scatter.png",
+                "comparison/simulation_venn.png",
+                "comparison/simulation_correlation.tsv",
+                "comparison/simulation_jaccard.png",
+                "comparison/simulation_benchmark.png",
+                "comparison/simulation_benchmark_mt.png",
+                "comparison/simulation_discrepancy_table.tsv",
+                "comparison/simulation_discrepancy_summary.png",
+            ],
+        ),
+        # Simulation-specific validation
+        "comparison/simulation_validation.tsv",
+        "comparison/simulation_validation.png",
+        # EIB benchmark outputs
+        "eib_benchmark/evaluation/accuracy_summary.tsv",
+        "eib_benchmark/evaluation/strand_accuracy.tsv",
+        "eib_benchmark/evaluation/accuracy_by_exon_count.png",
+        "eib_benchmark/evaluation/accuracy_by_intron_size.png",
+        "eib_benchmark/evaluation/accuracy_by_coverage.png",
+        "eib_benchmark/evaluation/accuracy_by_boundary_type.png",
+        "eib_benchmark/evaluation/accuracy_by_anchor_length.png",
+        "eib_benchmark/evaluation/accuracy_heatmap.png",
+        "eib_benchmark/evaluation/thread_scaling_time.png",
+        "eib_benchmark/evaluation/thread_scaling_memory.png",
+        "eib_benchmark/evaluation/speedup.png",
+        "eib_benchmark/evaluation/performance_summary.tsv",
+        # -------------------------------------------------------------------
+        # scRNA-seq junction benchmark outputs
+        # -------------------------------------------------------------------
+        # Simulation
+        "scrna_comparison/simulation_junction_counts.tsv",
+        "scrna_comparison/simulation_scatter.png",
+        "scrna_comparison/simulation_venn.png",
+        "scrna_comparison/simulation_correlation.tsv",
+        "scrna_comparison/simulation_per_cell_concordance.png",
+        "scrna_comparison/simulation_accuracy.tsv",
+        "scrna_comparison/simulation_benchmark.png",
+        # Real data (if any configured)
+        expand(
+            [
+                "scrna_comparison/{scrna_sample}_junction_counts.tsv",
+                "scrna_comparison/{scrna_sample}_scatter.png",
+                "scrna_comparison/{scrna_sample}_venn.png",
+                "scrna_comparison/{scrna_sample}_correlation.tsv",
+                "scrna_comparison/{scrna_sample}_per_cell_concordance.png",
+                "scrna_comparison/{scrna_sample}_benchmark.png",
+                "scrna_comparison/{scrna_sample}_benchmark_mt.png",
+            ],
+            scrna_sample=SCRNA_SAMPLES,
+        ),
+        # -------------------------------------------------------------------
+        # scRNA-seq EIB benchmark outputs
+        # -------------------------------------------------------------------
+        "scrna_eib_benchmark/evaluation/accuracy_summary.tsv",
+        "scrna_eib_benchmark/evaluation/per_cell_accuracy.tsv",
+        "scrna_eib_benchmark/evaluation/accuracy_by_boundary_type.png",
+        "scrna_eib_benchmark/evaluation/accuracy_by_anchor_length.png",
+        "scrna_eib_benchmark/evaluation/per_cell_accuracy.png",
+        "scrna_eib_benchmark/evaluation/accuracy_heatmap.png",
+        "scrna_eib_benchmark/evaluation/thread_scaling_time.png",
+        "scrna_eib_benchmark/evaluation/thread_scaling_memory.png",
+        "scrna_eib_benchmark/evaluation/speedup.png",
+        "scrna_eib_benchmark/evaluation/performance_summary.tsv",
+        # -------------------------------------------------------------------
+        # New figure targets for paper
+        # -------------------------------------------------------------------
+        "scrna_comparison/simulation_accuracy_plot.png",
+        expand(
+            "scrna_comparison/{scrna_sample}_tosa_vs_starsolo_scatter.png",
+            scrna_sample=SCRNA_SAMPLES,
+        ),
+        # -------------------------------------------------------------------
+        # scRNA-seq downsampling benchmark outputs
+        # -------------------------------------------------------------------
+        expand(
+            "scrna_comparison/{scrna_sample}_downsample_benchmark.png",
+            scrna_sample=SCRNA_SAMPLES,
+        ),
+        # -------------------------------------------------------------------
+        # Paper figures (copied to project root figures/ directory)
+        # -------------------------------------------------------------------
+        os.path.join(PAPER_DIR, "Figure4.png"),
+        os.path.join(PAPER_DIR, "Figure5AB.png"),
+        os.path.join(PAPER_DIR, "Figure5C.png"),
+        os.path.join(PAPER_DIR, "Figure5D.png"),
+        os.path.join(PAPER_DIR, "Figure5E.png"),
+        os.path.join(PAPER_DIR, "Figure5F.png"),
+        os.path.join(PAPER_DIR, "Figure5G.png"),
+
+
+rule export_paper_figures:
+    """Copy main pipeline figures to the project figures/ directory."""
+    input:
+        fig4="eib_benchmark/evaluation/accuracy_heatmap.png",
+        fig5ab=expand(
+            "scrna_comparison/{scrna_sample}_downsample_benchmark.png",
+            scrna_sample=SCRNA_SAMPLES,
+        ),
+        fig5c=expand(
+            "scrna_comparison/{scrna_sample}_per_cell_concordance.png",
+            scrna_sample=SCRNA_SAMPLES,
+        ),
+        fig5d="scrna_comparison/simulation_accuracy_plot.png",
+        fig5e=expand(
+            "scrna_comparison/{scrna_sample}_tosa_vs_starsolo_scatter.png",
+            scrna_sample=SCRNA_SAMPLES,
+        ),
+        fig5f="scrna_eib_benchmark/evaluation/accuracy_by_anchor_length.png",
+        fig5g="scrna_eib_benchmark/evaluation/per_cell_accuracy.png",
+    output:
+        fig4=os.path.join(PAPER_DIR, "Figure4.png"),
+        fig5ab=os.path.join(PAPER_DIR, "Figure5AB.png"),
+        fig5c=os.path.join(PAPER_DIR, "Figure5C.png"),
+        fig5d=os.path.join(PAPER_DIR, "Figure5D.png"),
+        fig5e=os.path.join(PAPER_DIR, "Figure5E.png"),
+        fig5f=os.path.join(PAPER_DIR, "Figure5F.png"),
+        fig5g=os.path.join(PAPER_DIR, "Figure5G.png"),
+    run:
+        import shutil, os
+        os.makedirs(PAPER_DIR, exist_ok=True)
+        shutil.copy2(input.fig4, output.fig4)
+        fig5ab_src = input.fig5ab[0] if isinstance(input.fig5ab, list) else input.fig5ab
+        shutil.copy2(fig5ab_src, output.fig5ab)
+        fig5c_src = input.fig5c[0] if isinstance(input.fig5c, list) else input.fig5c
+        shutil.copy2(fig5c_src, output.fig5c)
+        shutil.copy2(input.fig5d, output.fig5d)
+        fig5e_src = input.fig5e[0] if isinstance(input.fig5e, list) else input.fig5e
+        shutil.copy2(fig5e_src, output.fig5e)
+        shutil.copy2(input.fig5f, output.fig5f)
+        shutil.copy2(input.fig5g, output.fig5g)

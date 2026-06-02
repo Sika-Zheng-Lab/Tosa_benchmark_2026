@@ -1,0 +1,9 @@
+.snakemake/
+sbatch/.snakemake/
+sbatch/logs/
+slurm-*.out
+logs/
+__pycache__/
+*.bak
+*.pyc
+manuscript_draft.md

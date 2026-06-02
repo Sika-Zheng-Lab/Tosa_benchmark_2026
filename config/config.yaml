@@ -1,0 +1,183 @@
+## =============================================================================
+## Tosa Benchmark Configuration
+## =============================================================================
+
+## Output directory (relative to working directory or absolute)
+outdir: "results/test"
+
+## STAR genome index (pre-built)
+star_index: "/path/to/STAR/index_mm10_ensembl_v102"
+
+## GTF gene annotation (required for featureCounts -J)
+gtf: "/path/to/annotation/Mouse/Mus_musculus.GRCm38.102.gtf"
+
+## Strand specificity: null (unstranded), RF, FR, or XS
+strandedness: XS
+
+## Number of threads for STAR alignment
+star_threads: 32
+
+## Number of threads for multi-threaded benchmark of Tosa and featureCounts
+tosa_threads: 8
+featurecounts_threads: 8
+
+## Number of benchmark repeats (Snakemake benchmark repeat)
+benchmark_repeat: 10
+
+## ---------------------------------------------------------------------------
+## Samples — specify FASTQ paths per sample.
+## Omit R2 for single-end data; include R2 for paired-end.
+## ---------------------------------------------------------------------------
+samples:
+  sample1:
+    R1: "/path/to/fastq/sample1_R1.fastq.gz"
+    R2: "/path/to/fastq/sample1_R2.fastq.gz"
+  sample2:
+    R1: "/path/to/fastq/sample2_R1.fastq.gz"
+
+## ---------------------------------------------------------------------------
+## Simulation parameters — synthetic test data for PE dedup validation
+## ---------------------------------------------------------------------------
+simulation:
+  read_length: 100
+  num_pairs_both_mates: 10    # Both mates span the same junction
+  num_pairs_one_mate: 10      # Only one mate spans the junction
+  num_pairs_no_junction: 10   # Neither mate spans a junction (negative control)
+
+## ---------------------------------------------------------------------------
+## Singularity / Docker containers
+## ---------------------------------------------------------------------------
+containers:
+  tosa: "docker://naotokubota/tosa:develop"
+  regtools: "docker://naotokubota/shiba:v0.8.2"
+  star: "docker://quay.io/biocontainers/star:2.7.11a--h0033a41_0"
+  samtools: "docker://quay.io/biocontainers/samtools:1.18--h50ea8bc_1"
+  featurecounts: "docker://quay.io/biocontainers/subread:2.1.1--h577a1d6_0"
+  seqtk: "docker://quay.io/biocontainers/seqtk:1.4--he4a0461_2"
+  notebook: "docker://naotokubota/my_notebook:2.0.0"
+
+## ---------------------------------------------------------------------------
+## EIB (Exon-Intron Boundary) Benchmark — Tosa-only accuracy & scalability
+## ---------------------------------------------------------------------------
+eib_benchmark:
+  ## Number of synthetic genes to generate
+  n_genes: 200
+  ## Possible exon counts per gene (randomly assigned)
+  exon_counts: [2, 3, 5, 10]
+  ## Exon length range (bp)
+  exon_size_range: [100, 2000]
+  ## Intron length range (bp)
+  intron_size_range: [100, 100000]
+  ## Boundary coverage levels (reads per boundary, randomly assigned per gene)
+  coverage_levels: [5, 20, 100]
+  ## Read length
+  read_length: 100
+  ## Fragment length distribution for paired-end data
+  fragment_length: 300
+  fragment_length_sd: 50
+  ## Boundary anchor lengths to sweep (Tosa -b / --boundary-anchor-length)
+  boundary_anchor_lengths: [1, 4, 8]
+  ## Thread counts to benchmark
+  threads: [1, 4, 8]
+  ## Strandedness modes to evaluate (XS, RF, FR)
+  strandedness: [XS, RF, FR]
+  ## Library types to evaluate (PE, SE)
+  library_types: [PE, SE]
+  ## Number of benchmark repeats
+  benchmark_repeat: 10
+  ## STAR alignment threads for EIB data
+  star_threads: 32
+  ## Random seed for reproducibility
+  seed: 42
+
+## ---------------------------------------------------------------------------
+## scRNA-seq Benchmark — STARsolo + Tosa single + regtools -b
+## ---------------------------------------------------------------------------
+scrna_benchmark:
+  ## scRNA-seq samples (10x Chromium v3: R1=CB+UMI, R2=cDNA)
+  ## Add your samples below. R1 = CB+UMI read, R2 = cDNA read.
+  ## Uses the same star_index as the bulk pipeline.
+  samples:
+    scrna_sample1:
+      R1: ["/path/to/fastq/scrna_sample1_lane1_R1.fq.gz", "/path/to/fastq/scrna_sample1_lane2_R1.fq.gz"]
+      R2: ["/path/to/fastq/scrna_sample1_lane1_R2.fq.gz", "/path/to/fastq/scrna_sample1_lane2_R2.fq.gz"]
+
+  ## 10x Chromium v3 chemistry
+  chemistry: "v3"
+  cb_length: 16
+  umi_length: 12
+  ## Path to 10x whitelist (v3); set to null for simulation-only runs
+  whitelist: "/path/to/10x/cellranger_ref/3M-february-2018.txt"
+
+  ## STARsolo parameters
+  starsolo_threads: 32
+  ## Features to quantify (Gene for counts, SJ for splice junctions)
+  starsolo_features: "Gene SJ"
+  ## Cell filtering (EmptyDrops_CR matches CellRanger behaviour)
+  starsolo_cell_filter: "EmptyDrops_CR"
+
+  ## Tosa single-cell parameters
+  tosa_threads: 8
+
+  ## Benchmark repeats
+  benchmark_repeat: 3
+
+  ## Strand specificity (XS for scRNA-seq since STARsolo adds XS tags)
+  strandedness: XS
+
+  ## Downsampling benchmark — fractions of total reads to evaluate
+  downsample_fractions: [1.0, 0.75, 0.5, 0.25]
+  downsample_benchmark_repeat: 3
+  downsample_seed: 42
+
+## ---------------------------------------------------------------------------
+## scRNA-seq Simulation — synthetic scRNA-seq data with known ground truth
+## ---------------------------------------------------------------------------
+scrna_simulation:
+  ## Number of cells to simulate
+  n_cells: 3000
+  ## Number of genes with introns (junction-generating genes)
+  n_genes: 20
+  ## Exon/intron structure
+  exon_counts: [2, 3, 5]
+  exon_size_range: [200, 1000]
+  intron_size_range: [200, 50000]
+  ## Coverage: reads per cell per junction (randomly sampled)
+  coverage_per_cell: [0, 1, 3, 10]
+  ## Read length (cDNA read = R2)
+  read_length: 90
+  ## Random seed
+  seed: 42
+
+## ---------------------------------------------------------------------------
+## scRNA-seq EIB Benchmark — boundary counting accuracy for Tosa single
+## ---------------------------------------------------------------------------
+scrna_eib_benchmark:
+  ## Number of cells
+  n_cells: 3000
+  ## Reuses EIB genome from bulk benchmark (eib_benchmark section)
+  ## Coverage per cell per boundary
+  coverage_per_cell: [1, 5, 20]
+  ## Boundary anchor lengths to sweep
+  boundary_anchor_lengths: [1, 4, 8]
+  ## Thread counts
+  threads: [1, 4, 8]
+  ## Strandedness modes
+  strandedness: [XS]
+  ## Read length
+  read_length: 100
+  ## Fragment length (PE)
+  fragment_length: 300
+  fragment_length_sd: 50
+  ## Benchmark repeats
+  benchmark_repeat: 10
+  ## Random seed
+  seed: 42
+
+## ---------------------------------------------------------------------------
+## Singularity bind paths — directories the containers need to access.
+## Automatically collected from outdir / star_index / sample FASTQ paths,
+## but add extra paths here if needed.
+## ---------------------------------------------------------------------------
+singularity_bind_paths:
+  - "/path/to/data"

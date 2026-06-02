@@ -1,0 +1,42 @@
+## =============================================================================
+## Large-scale Benchmark Configuration
+## Compare Tosa / regtools / featureCounts processing speed on all BAM files
+## from Rogalska et al. RBP knockdown dataset (HEK293T, paired-end)
+## =============================================================================
+
+## Output directory
+outdir: "results/largescale"
+
+## Experiment table (TSV with columns: sample, bam, group)
+experiment_table: "data/experiment_table_largescale.tsv"
+
+## GTF gene annotation (human GRCh38, required for featureCounts -J)
+gtf: "/path/to/annotation/Human/Homo_sapiens.GRCh38.106.gtf"
+
+## Reference genome FASTA (human GRCh38, for splice-site motif extraction)
+fasta: "/path/to/annotation/Human/Homo_sapiens.GRCh38.dna_sm.primary_assembly.fa"
+
+## Strand specificity (XS: use XS tags from STAR)
+strandedness: XS
+
+## Library type
+paired_end: true
+
+## Thread counts for multi-threaded runs
+tosa_threads: 8
+featurecounts_threads: 8
+
+## Number of benchmark repeats (1 is sufficient for large-scale data)
+benchmark_repeat: 1
+
+## Singularity / Docker containers
+containers:
+  tosa: "docker://naotokubota/tosa:develop"
+  regtools: "docker://naotokubota/shiba:v0.8.2"
+  featurecounts: "docker://quay.io/biocontainers/subread:2.1.1--h577a1d6_0"
+  samtools: "docker://quay.io/biocontainers/samtools:1.18--h50ea8bc_1"
+  notebook: "docker://naotokubota/my_notebook:2.0.0"
+
+## Singularity bind paths
+singularity_bind_paths:
+  - "/path/to/data"

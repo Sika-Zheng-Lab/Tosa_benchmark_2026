@@ -1,0 +1,44 @@
+## =============================================================================
+## Long-read RNA-seq Benchmark Configuration
+## Compare Tosa / regtools / featureCounts on Oxford Nanopore long-read data
+## (GSE246705: mouse brain, minimap2-aligned BAMs)
+## =============================================================================
+
+## Output directory
+outdir: "results/longread"
+
+## Experiment table (TSV with columns: sample, bam, group)
+experiment_table: "data/experiment_table_longread.tsv"
+
+## GTF gene annotation (mouse GRCm38 Ensembl v102, required for featureCounts -J)
+gtf: "/path/to/annotation/Mouse/Mus_musculus.GRCm38.102.gtf"
+
+## Reference genome FASTA (mouse GRCm38, for regtools intron-motif strand detection)
+fasta: "/path/to/annotation/Mouse/Mus_musculus.GRCm38.dna_sm.primary_assembly.fa"
+
+## Strand specificity
+## Long-read (minimap2 splice) does not produce XS tags — use unstranded mode.
+## regtools will use intron-motif method with the genome FASTA for strand inference.
+strandedness: null
+
+## Library type (Oxford Nanopore long-read = single-end)
+paired_end: false
+
+## Thread counts for multi-threaded runs
+tosa_threads: 8
+featurecounts_threads: 8
+
+## Number of benchmark repeats
+benchmark_repeat: 3
+
+## Singularity / Docker containers
+containers:
+  tosa: "docker://naotokubota/tosa:develop"
+  regtools: "docker://naotokubota/shiba:v0.8.2"
+  featurecounts: "docker://quay.io/biocontainers/subread:2.1.1--h577a1d6_0"
+  samtools: "docker://quay.io/biocontainers/samtools:1.18--h50ea8bc_1"
+  notebook: "docker://naotokubota/my_notebook:2.0.0"
+
+## Singularity bind paths
+singularity_bind_paths:
+  - "/path/to/data"

@@ -1,0 +1,186 @@
+## =============================================================================
+## Large-scale Benchmark — Snakefile
+## Compare Tosa / regtools / featureCounts processing speed on all BAM files
+## =============================================================================
+
+import os
+import pandas as pd
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+configfile: os.path.join(workflow.basedir, "..", "config", "config_largescale.yaml")
+
+OUTDIR = config.get("outdir", "results")
+workdir: OUTDIR
+
+# ---------------------------------------------------------------------------
+# Read experiment table
+# ---------------------------------------------------------------------------
+
+EXPERIMENT_TABLE = pd.read_csv(config["experiment_table"], sep="\t")
+SAMPLES = EXPERIMENT_TABLE["sample"].tolist()
+BAM_DICT = dict(zip(EXPERIMENT_TABLE["sample"], EXPERIMENT_TABLE["bam"]))
+
+# ---------------------------------------------------------------------------
+# Singularity bind paths
+# ---------------------------------------------------------------------------
+
+def _collect_bind_paths():
+    """Gather all directories that Singularity containers need to access."""
+    paths = set()
+    # Output directory
+    if os.path.isabs(OUTDIR):
+        paths.add(OUTDIR)
+    # GTF annotation directory
+    gtf = config.get("gtf", "")
+    if gtf and os.path.isabs(gtf):
+        paths.add(os.path.dirname(gtf))
+    # BAM file directories
+    for bam in BAM_DICT.values():
+        if bam and os.path.isabs(bam):
+            paths.add(os.path.dirname(bam))
+    # Explicit extra bind paths
+    for p in config.get("singularity_bind_paths", []):
+        if p:
+            paths.add(p)
+    return sorted(paths)
+
+_BIND_PATHS = _collect_bind_paths()
+SINGULARITY_ARGS = " ".join(f"--bind {p}" for p in _BIND_PATHS) if _BIND_PATHS else ""
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def get_bam(wildcards):
+    """Return BAM path for a given sample."""
+    return BAM_DICT[wildcards.sample]
+
+def get_bai(wildcards):
+    """Return BAI path for a given sample (assumes .bam.bai exists)."""
+    return BAM_DICT[wildcards.sample] + ".bai"
+
+def get_star_sj(wildcards):
+    """Return STAR SJ.out.tab path derived from BAM path."""
+    bam = BAM_DICT[wildcards.sample]
+    return bam.replace("_Aligned.out.bam", "_SJ.out.tab")
+
+def get_strandedness_tosa():
+    """Return strand flag for Tosa."""
+    s = config.get("strandedness")
+    if s:
+        return f"--strand {s}"
+    return ""
+
+def get_strandedness_featurecounts():
+    """Return strand code for featureCounts (-s)."""
+    s = config.get("strandedness")
+    if s is None:
+        return 0
+    mapping = {"RF": 2, "FR": 1, "XS": 0}
+    return mapping.get(s, 0)
+
+TOSA_STRAND = get_strandedness_tosa()
+FC_STRAND = get_strandedness_featurecounts()
+PE_FLAG = "-p --countReadPairs" if config.get("paired_end", True) else ""
+
+# ---------------------------------------------------------------------------
+# Define tool-thread conditions
+# ---------------------------------------------------------------------------
+
+TOOLS = ["tosa_1t", "tosa_8t", "regtools_1t", "featurecounts_1t", "featurecounts_8t"]
+
+# ---------------------------------------------------------------------------
+# Include rules
+# ---------------------------------------------------------------------------
+
+include: "rules/largescale_benchmark.smk"
+include: "rules/largescale_junction_comparison.smk"
+
+# ---------------------------------------------------------------------------
+# Paper figure directory (project root)
+# ---------------------------------------------------------------------------
+
+PAPER_DIR = os.path.abspath(os.path.join(workflow.basedir, "..", "figures"))
+
+# Sample used for Figure 2C (Tosa vs regtools scatter)
+FIG2C_SAMPLE = "PTBP1_1"
+
+# ---------------------------------------------------------------------------
+# Target rule
+# ---------------------------------------------------------------------------
+
+rule all:
+    input:
+        # All benchmark TSV files
+        expand("benchmarks/{sample}/{tool}.tsv", sample=SAMPLES, tool=TOOLS),
+        # All read count files
+        expand("read_counts/{sample}.txt", sample=SAMPLES),
+        # Aggregated results
+        "largescale_results/per_sample_benchmark.tsv",
+        "largescale_results/summary_total_time.tsv",
+        "largescale_results/barplot_total_time.png",
+        "largescale_results/boxplot_time_per_sample.png",
+        "largescale_results/scatter_reads_vs_time.png",
+        "largescale_results/scatter_reads_vs_memory.png",
+        "largescale_results/boxplot_memory.png",
+        "largescale_results/speedup_comparison.png",
+        # Junction comparison results
+        "largescale_results/junction_comparison/per_sample_jaccard.tsv",
+        "largescale_results/junction_comparison/jaccard_set_heatmap.png",
+        "largescale_results/junction_comparison/jaccard_count_heatmap.png",
+        "largescale_results/junction_comparison/jaccard_boxplot.png",
+        "largescale_results/junction_comparison/upset_plot.png",
+        "largescale_results/junction_comparison/junction_summary.tsv",
+        # Tosa vs regtools scatter (Figure 2E)
+        f"largescale_results/junction_comparison/{FIG2C_SAMPLE}_tosa_vs_regtools_scatter.png",
+        # Junction annotation classification
+        "largescale_results/junction_annotation/annotation_summary.tsv",
+        "largescale_results/junction_annotation/star_missed_summary.tsv",
+        "largescale_results/junction_annotation/annotation_proportion.png",
+        "largescale_results/junction_annotation/star_missed_annotation.png",
+        # STAR-missed motif and count analysis
+        "largescale_results/junction_annotation/star_missed_motif_summary.tsv",
+        "largescale_results/junction_annotation/star_missed_motif_barplot.png",
+        "largescale_results/junction_annotation/star_missed_count_distribution.png",
+        # Paper figures
+        os.path.join(PAPER_DIR, "Figure2A.png"),
+        os.path.join(PAPER_DIR, "Figure2B.png"),
+        os.path.join(PAPER_DIR, "Figure2C.png"),
+        os.path.join(PAPER_DIR, "Figure2D.png"),
+        os.path.join(PAPER_DIR, "Figure2E.png"),
+        os.path.join(PAPER_DIR, "Figure2F.png"),
+        os.path.join(PAPER_DIR, "Figure2G.png"),
+
+
+rule export_paper_figures_largescale:
+    """Copy large-scale benchmark figures to the project figures/ directory."""
+    input:
+        fig2a="largescale_results/scatter_reads_vs_time.png",
+        fig2b="largescale_results/scatter_reads_vs_memory.png",
+        fig2c="largescale_results/junction_comparison/jaccard_set_heatmap.png",
+        fig2d="largescale_results/junction_annotation/annotation_proportion.png",
+        fig2e="largescale_results/junction_annotation/star_missed_annotation.png",
+        fig2f="largescale_results/junction_comparison/jaccard_count_heatmap.png",
+        fig2g=f"largescale_results/junction_comparison/{FIG2C_SAMPLE}_tosa_vs_regtools_scatter.png",
+    output:
+        fig2a=os.path.join(PAPER_DIR, "Figure2A.png"),
+        fig2b=os.path.join(PAPER_DIR, "Figure2B.png"),
+        fig2c=os.path.join(PAPER_DIR, "Figure2C.png"),
+        fig2d=os.path.join(PAPER_DIR, "Figure2D.png"),
+        fig2e=os.path.join(PAPER_DIR, "Figure2E.png"),
+        fig2f=os.path.join(PAPER_DIR, "Figure2F.png"),
+        fig2g=os.path.join(PAPER_DIR, "Figure2G.png"),
+    shell:
+        """
+        mkdir -p {PAPER_DIR}
+        cp {input.fig2a} {output.fig2a}
+        cp {input.fig2b} {output.fig2b}
+        cp {input.fig2c} {output.fig2c}
+        cp {input.fig2d} {output.fig2d}
+        cp {input.fig2e} {output.fig2e}
+        cp {input.fig2f} {output.fig2f}
+        cp {input.fig2g} {output.fig2g}
+        """
