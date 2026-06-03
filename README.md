@@ -1,4 +1,4 @@
-# Tosa Benchmark
+# Tosa_benchmark_2026
 
 Benchmark pipeline comparing junction read counting tools:
 
@@ -6,6 +6,12 @@ Benchmark pipeline comparing junction read counting tools:
 - **[regtools](https://github.com/griffithlab/regtools)** — Junction extraction from BAM files
 - **[STAR](https://github.com/alexdobin/STAR)** — Splice junction counts from alignment (SJ.out.tab)
 - **[featureCounts](https://subread.sourceforge.net/featureCounts.html)** — Junction counting via Subread (-J option)
+
+This pipeline has been used in the benchmarks of Tosa's manuscript:
+
+Tosa: a fast, memory-efficient, and multi-modal tool for splice junction and exon-intron boundary quantification across bulk and single-cell RNA-seq<br>
+Naoto Kubota, Sika Zheng<br>
+2026.
 
 ## Key features
 
