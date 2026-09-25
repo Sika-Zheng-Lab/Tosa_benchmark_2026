@@ -2,20 +2,20 @@
 
 Benchmark pipeline comparing junction read counting tools:
 
-- **[Tosa](https://github.com/NaotoKubota/Tosa)** — Rust-based junction counter from BAM files
+- **[Tosa](https://github.com/NaotoKubota/Tosa)** — Rust-based junction counter from BAM/CRAM files
 - **[regtools](https://github.com/griffithlab/regtools)** — Junction extraction from BAM files
 - **[STAR](https://github.com/alexdobin/STAR)** — Splice junction counts from alignment (SJ.out.tab)
 - **[featureCounts](https://subread.sourceforge.net/featureCounts.html)** — Junction counting via Subread (-J option)
 
 This pipeline has been used in the benchmarks of Tosa's manuscript:
 
-Tosa: a fast, memory-efficient, and multi-modal tool for splice junction and exon-intron boundary quantification across bulk and single-cell RNA-seq<br>
+Tosa: a unified framework for splice-junction and exon-intron boundary quantification reveals methodological differences among RNA-seq counting tools<br>
 Naoto Kubota, Sika Zheng<br>
 2026.
 
 ## Key features
 
-| | STAR (2.7.11a) | regtools (v1.0.0) | featureCounts (v2.1.1) | **Tosa** |
+| | STAR (2.7.11a) | regtools (v1.0.0) | featureCounts (v2.1.1) | **Tosa (v1.0.0)** |
 |---|---|---|---|---|
 | Pipeline stage | Alignment coupled (FASTQ + genome index) | Post-alignment (BAM/CRAM) | Post-alignment (BAM) | **Post-alignment (BAM/CRAM)** |
 | Multithreading | Yes | No | Yes | **Yes** |
@@ -39,7 +39,7 @@ All bioinformatics tools run inside Singularity containers — no local installa
 
 | Tool | Image |
 |---|---|
-| Tosa | `docker://naotokubota/tosa:develop` |
+| Tosa | `docker://naotokubota/tosa:v1.0.0` |
 | regtools | `docker://naotokubota/shiba:v0.8.2` |
 | featureCounts | `docker://quay.io/biocontainers/subread:2.1.1--h577a1d6_0` |
 | STAR | `docker://quay.io/biocontainers/star:2.7.11a--h0033a41_0` |
